@@ -274,13 +274,16 @@
       this.rabbit.y += this.rabbit.vy * dt
 
       const feetY = this.rabbit.y + DOG_R * 0.9
+      // 判定窗口动态化：狗粮超高弹跳时速度极快，按"本帧位移"放大窗口，
+      // 保证高速穿过中间层也能命中计分，不会漏吃
+      const win = Math.max(HIT_ZONE, this.rabbit.vy * dt * 1.4 + 6)
       for (const b of this.bells) {
         if (b.scored || b.passed || b.hit) continue
         const d = feetY - b.y
-        if (d >= 0 && d <= HIT_ZONE && this.rabbit.vy > 0) {
+        if (d >= 0 && d <= win && this.rabbit.vy > 0) {
           if (Math.abs(this.rabbit.x - b.x) <= b.r + FEET_R) {
             this.hitBell(b)
-          } else if (d >= HIT_ZONE - 2) {
+          } else if (d >= win - 2) {
             b.passed = true
           }
         }
@@ -641,7 +644,8 @@
         const dogW = (dogH * dogImg.width) / dogImg.height
         const tilt = clamp(this.rabbit.vx * 0.02, -0.35, 0.35)
         const bob = Math.sin(t * 4) * 2
-        const facing = this.rabbit.vx >= 0 ? 1 : -1
+        // 便便狗原图头朝左：向右移动时镜像成朝右，向左移动保持原图方向
+        const facing = this.rabbit.vx >= 0 ? -1 : 1
 
         ctx.save()
         ctx.translate(x, y + bob)
@@ -659,8 +663,9 @@
           const cr = this.carryBone.r * 1.15
           const cbw = cr * 2.2
           ctx.save()
-          ctx.translate(dogW * 0.18, -dogH * 0.12)
-          ctx.rotate(0.3)
+          // 骨头叼在嘴里：狗嘴在精灵左下部（黑鼻粉舌处），随朝向镜像自动翻转
+          ctx.translate(-dogW * 0.24, dogH * 0.34)
+          ctx.rotate(-0.12)
           if (this.boneLoaded && this.boneImg) {
             const cbh = (cbw * this.boneImg.height) / this.boneImg.width
             ctx.drawImage(this.boneImg, -cbw / 2, -cbh / 2, cbw, cbh)
@@ -747,25 +752,38 @@
     if (audioCtx) return
     try { audioCtx = new (window.AudioContext || window.webkitAudioContext)() } catch (e) { /* ignore */ }
   }
-  function playTone(freq, dur, type, gain) {
+  function playTone(freq, dur, type, gain, freqEnd) {
     if (!audioCtx) return
     try {
       const o = audioCtx.createOscillator()
       const g = audioCtx.createGain()
+      const t0 = audioCtx.currentTime
       o.type = type || 'sine'
-      o.frequency.value = freq
-      g.gain.setValueAtTime(gain || 0.12, audioCtx.currentTime)
-      g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur)
+      o.frequency.setValueAtTime(freq, t0)
+      if (freqEnd) o.frequency.exponentialRampToValueAtTime(Math.max(30, freqEnd), t0 + dur)
+      g.gain.setValueAtTime(gain || 0.12, t0)
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + dur)
       o.connect(g)
       g.connect(audioCtx.destination)
-      o.start()
-      o.stop(audioCtx.currentTime + dur)
+      o.start(t0)
+      o.stop(t0 + dur)
     } catch (e) { /* ignore */ }
   }
   function playSound(name) {
-    if (name === 'bell') { playTone(880, 0.09, 'triangle', 0.14); setTimeout(() => playTone(1320, 0.08, 'triangle', 0.1), 60) }
-    else if (name === 'star') { playTone(520, 0.12, 'sawtooth', 0.08); setTimeout(() => playTone(780, 0.1, 'sawtooth', 0.08), 70); setTimeout(() => playTone(1040, 0.14, 'sawtooth', 0.08), 140) }
-    else if (name === 'fail') { playTone(300, 0.4, 'sawtooth', 0.1); setTimeout(() => playTone(180, 0.5, 'sawtooth', 0.1), 120) }
+    if (name === 'bell') {
+      // 踩骨头：汪汪嗷呜（短促上扬+下滑）
+      playTone(600, 0.09, 'square', 0.10, 880)
+      setTimeout(() => playTone(430, 0.16, 'square', 0.10, 240), 80)
+    } else if (name === 'star') {
+      // 狗粮：咕咚吞咽 + 嗷呜
+      playTone(150, 0.09, 'sine', 0.20, 70)
+      setTimeout(() => playTone(640, 0.09, 'square', 0.10, 920), 60)
+      setTimeout(() => playTone(470, 0.16, 'square', 0.10, 250), 150)
+    } else if (name === 'fail') {
+      // 掉落：失望呜咽（低频下滑）
+      playTone(320, 0.3, 'sawtooth', 0.10, 190)
+      setTimeout(() => playTone(190, 0.45, 'sawtooth', 0.10, 120), 150)
+    }
   }
 
   /* ---------- 输入（桌面悬停即跟随；手机触摸） ---------- */
