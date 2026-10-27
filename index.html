@@ -634,8 +634,11 @@
       const t = this.elapsed
 
       if (this.dogLoaded && this.dogImg) {
+        // 跳跃动画：上升阶段（vy<0）切换为"两腿往前蹬"的腾空帧，下落/待机用站立帧
+        const useJump = this.rabbit.vy < 0 && this.dog2Loaded && this.dog2Img
+        const dogImg = useJump ? this.dog2Img : this.dogImg
         const dogH = r * 3.2
-        const dogW = (dogH * this.dogImg.width) / this.dogImg.height
+        const dogW = (dogH * dogImg.width) / dogImg.height
         const tilt = clamp(this.rabbit.vx * 0.02, -0.35, 0.35)
         const bob = Math.sin(t * 4) * 2
         const facing = this.rabbit.vx >= 0 ? 1 : -1
@@ -650,7 +653,7 @@
         ctx.ellipse(0, dogH * 0.42, dogW * 0.3, dogH * 0.06, 0, 0, Math.PI * 2)
         ctx.fill()
 
-        ctx.drawImage(this.dogImg, -dogW / 2, -dogH * 0.42, dogW, dogH)
+        ctx.drawImage(dogImg, -dogW / 2, -dogH * 0.42, dogW, dogH)
 
         if (this.carryBone) {
           const cr = this.carryBone.r * 1.15
@@ -817,19 +820,23 @@
   game.bgLoaded = false
   game.bgImg = new Image()
   game.bgImg.onload = () => { game.bgLoaded = true }
-  game.bgImg.src = 'bg.jpg'
+  game.bgImg.src = 'assets/images/bg.jpg'
   game.boneLoaded = false
   game.boneImg = new Image()
   game.boneImg.onload = () => { game.boneLoaded = true }
-  game.boneImg.src = 'bone.png'
+  game.boneImg.src = 'assets/images/bone.png'
   game.foodLoaded = false
   game.foodImg = new Image()
   game.foodImg.onload = () => { game.foodLoaded = true }
-  game.foodImg.src = 'food.png'
+  game.foodImg.src = 'assets/images/food.png'
   game.dogLoaded = false
   game.dogImg = new Image()
   game.dogImg.onload = () => { game.dogLoaded = true }
-  game.dogImg.src = 'dog.png'
+  game.dogImg.src = 'assets/images/dog.png'
+  game.dog2Loaded = false
+  game.dog2Img = new Image()
+  game.dog2Img.onload = () => { game.dog2Loaded = true }
+  game.dog2Img.src = 'assets/images/dog2.png'
 
   /* ---------- 启动 ---------- */
   game.loadBest()
