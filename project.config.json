@@ -1,0 +1,15 @@
+{
+  "description": "小狗吃骨头 - 微信小程序版（小兔跳铃铛机制改编）",
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "dog-bone-jump",
+  "libVersion": "3.4.10",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "ignoreUploadUnusedFiles": true
+  },
+  "condition": {}
+}
