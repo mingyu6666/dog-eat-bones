@@ -112,18 +112,35 @@ Page({
         this.W = width
         this.H = height
 
-        // 加载游戏背景图（公园场景，铺在画面底部）
-        this.bgLoaded = false
-        this.bgImg = wx.createImage()
-        this.bgImg.onload = () => {
-          this.bgLoaded = true
-        }
-        this.bgImg.src = 'assets/images/bg.jpg'
+        // 加载真实素材精灵图（骨头/狗粮/小狗/背景，全部来自用户素材文件夹）
+        this.loadImg('bg', 'assets/images/bg.jpg')
+        this.loadImg('bone', 'assets/images/bone.png')
+        this.loadImg('food', 'assets/images/food.png')
+        this.loadImg('dog', 'assets/images/dog.png')
 
         this.initGame()
         this.lastT = 0
         this.startLoop()
       })
+  },
+
+  /** 通用精灵加载：加载完成置 loaded 标志（加载失败自动回退程序化兜底绘制） */
+  loadImg(key, src) {
+    this[key + 'Loaded'] = false
+    this[key + 'Img'] = null
+    try {
+      const img = wx.createImage()
+      img.onload = () => {
+        this[key + 'Img'] = img
+        this[key + 'Loaded'] = true
+      }
+      img.onerror = () => {
+        this[key + 'Loaded'] = false
+      }
+      img.src = src
+    } catch (e) {
+      this[key + 'Loaded'] = false
+    }
   },
 
   initAudio() {
@@ -574,17 +591,16 @@ Page({
     ctx.clearRect(0, 0, W, H)
 
     this.drawBackground(ctx, t)
-    this.drawClouds(ctx, t)
     this.drawBones(ctx, t)
     this.drawFoods(ctx)
     this.drawDog(ctx)
     this.drawParticles(ctx)
   },
 
-  drawBackground(ctx, t) {
+  drawBackground(ctx) {
     const W = this.W
     const H = this.H
-    // 白天天空渐变（与公园背景图同色调）
+    // 天空渐变兜底（背景图未加载时）
     const grad = ctx.createLinearGradient(0, 0, 0, H)
     grad.addColorStop(0, '#8ec9f2')
     grad.addColorStop(0.6, '#bfe3f7')
@@ -592,11 +608,14 @@ Page({
     ctx.fillStyle = grad
     ctx.fillRect(0, 0, W, H)
 
-    // 公园背景图：等比铺在画面底部（完整场景，草地上方为天空）
+    // 公园背景图：cover 全屏铺满（完整场景：蓝天 + 草地 + 步道 + 喷泉）
     if (this.bgLoaded && this.bgImg) {
-      const bgAspect = this.bgImg.width / this.bgImg.height
-      const bgH = Math.min(H * 0.55, W / bgAspect)
-      ctx.drawImage(this.bgImg, 0, H - bgH, W, bgH)
+      const iw = this.bgImg.width
+      const ih = this.bgImg.height
+      const scale = Math.max(W / iw, H / ih)
+      const dw = iw * scale
+      const dh = ih * scale
+      ctx.drawImage(this.bgImg, (W - dw) / 2, (H - dh) / 2, dw, dh)
     }
   },
 
@@ -650,70 +669,82 @@ Page({
         ctx.globalAlpha = alpha * (b.scored ? 0.28 : 1)
       }
 
-      // 骨头：两端骨节 + 中间骨身（暖黄，参考素材配色）
-      const boneBody = ctx.createLinearGradient(-b.r * 0.9, 0, b.r * 0.9, 0)
-      if (b.gold) {
-        boneBody.addColorStop(0, '#ffe082')
-        boneBody.addColorStop(0.5, '#ffd54f')
-        boneBody.addColorStop(1, '#f0a91e')
+      // 骨头：真实素材精灵（骨头1.png：奶白骨身+暖金环带+爱心黄星装饰）
+      if (this.boneLoaded && this.boneImg) {
+        const bw = b.r * 2.7
+        const bh = (bw * this.boneImg.height) / this.boneImg.width
+        ctx.drawImage(this.boneImg, -bw / 2, -bh / 2, bw, bh)
+        // 金骨头：金色光晕叠加
+        if (b.gold && !b.scored) {
+          const pulse = 0.5 + 0.5 * Math.sin(t * 0.006 + b.x)
+          ctx.globalAlpha = alpha * (0.18 + 0.18 * pulse)
+          const rg = ctx.createRadialGradient(0, 0, b.r * 0.4, 0, 0, b.r * 1.6)
+          rg.addColorStop(0, 'rgba(255,213,79,0.8)')
+          rg.addColorStop(1, 'rgba(255,213,79,0)')
+          ctx.fillStyle = rg
+          ctx.beginPath()
+          ctx.arc(0, 0, b.r * 1.6, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.globalAlpha = alpha * (b.scored ? 0.28 : 1)
+        }
       } else {
-        boneBody.addColorStop(0, '#ffcf6e')
-        boneBody.addColorStop(0.5, '#f6b83d')
-        boneBody.addColorStop(1, '#e89b2a')
-      }
-      // 骨身（圆角长条）
-      ctx.fillStyle = boneBody
-      ctx.beginPath()
-      const halfLen = b.r * 0.85
-      const thick = b.r * 0.34
-      ctx.moveTo(-halfLen, -thick)
-      ctx.quadraticCurveTo(0, -thick * 1.25, halfLen, -thick)
-      ctx.lineTo(halfLen, thick)
-      ctx.quadraticCurveTo(0, thick * 1.25, -halfLen, thick)
-      ctx.closePath()
-      ctx.fill()
-      ctx.strokeStyle = '#8a5a2b'
-      ctx.lineWidth = 1.6
-      ctx.stroke()
-
-      // 两端骨节（奶白圆头 + 描边）
-      ctx.fillStyle = b.gold ? '#fff8dc' : '#fff6e8'
-      ctx.strokeStyle = '#8a5a2b'
-      ctx.lineWidth = 1.6
-      for (const side of [-1, 1]) {
+        // 兜底：程序化绘制（素材加载失败时保证画面不空）
+        const boneBody = ctx.createLinearGradient(-b.r * 0.9, 0, b.r * 0.9, 0)
+        if (b.gold) {
+          boneBody.addColorStop(0, '#ffe082')
+          boneBody.addColorStop(0.5, '#ffd54f')
+          boneBody.addColorStop(1, '#f0a91e')
+        } else {
+          boneBody.addColorStop(0, '#ffcf6e')
+          boneBody.addColorStop(0.5, '#f6b83d')
+          boneBody.addColorStop(1, '#e89b2a')
+        }
+        ctx.fillStyle = boneBody
         ctx.beginPath()
-        ctx.arc(side * (halfLen + b.r * 0.12), 0, b.r * 0.42, 0, Math.PI * 2)
+        const halfLen = b.r * 0.85
+        const thick = b.r * 0.34
+        ctx.moveTo(-halfLen, -thick)
+        ctx.quadraticCurveTo(0, -thick * 1.25, halfLen, -thick)
+        ctx.lineTo(halfLen, thick)
+        ctx.quadraticCurveTo(0, thick * 1.25, -halfLen, thick)
+        ctx.closePath()
         ctx.fill()
+        ctx.strokeStyle = '#8a5a2b'
+        ctx.lineWidth = 1.6
         ctx.stroke()
-        // 骨节高光
-        ctx.fillStyle = 'rgba(255,255,255,0.6)'
-        ctx.beginPath()
-        ctx.arc(side * (halfLen + b.r * 0.12) - b.r * 0.12, -b.r * 0.14, b.r * 0.12, 0, Math.PI * 2)
-        ctx.fill()
         ctx.fillStyle = b.gold ? '#fff8dc' : '#fff6e8'
+        ctx.strokeStyle = '#8a5a2b'
+        ctx.lineWidth = 1.6
+        for (const side of [-1, 1]) {
+          ctx.beginPath()
+          ctx.arc(side * (halfLen + b.r * 0.12), 0, b.r * 0.42, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+          ctx.fillStyle = 'rgba(255,255,255,0.6)'
+          ctx.beginPath()
+          ctx.arc(side * (halfLen + b.r * 0.12) - b.r * 0.12, -b.r * 0.14, b.r * 0.12, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.fillStyle = b.gold ? '#fff8dc' : '#fff6e8'
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'
+        ctx.beginPath()
+        ctx.ellipse(0, -b.r * 0.18, b.r * 0.5, b.r * 0.1, 0, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = '#ff6b6b'
+        ctx.beginPath()
+        ctx.moveTo(b.r * 0.45, -b.r * 0.55)
+        ctx.bezierCurveTo(
+          b.r * 0.3, -b.r * 0.72,
+          b.r * 0.02, -b.r * 0.55,
+          b.r * 0.45, -b.r * 0.3
+        )
+        ctx.bezierCurveTo(
+          b.r * 0.88, -b.r * 0.55,
+          b.r * 0.6, -b.r * 0.72,
+          b.r * 0.45, -b.r * 0.55
+        )
+        ctx.fill()
       }
-
-      // 骨身高光
-      ctx.fillStyle = 'rgba(255,255,255,0.45)'
-      ctx.beginPath()
-      ctx.ellipse(0, -b.r * 0.18, b.r * 0.5, b.r * 0.1, 0, 0, Math.PI * 2)
-      ctx.fill()
-
-      // 爱心小点缀（参考素材）
-      ctx.fillStyle = '#ff6b6b'
-      ctx.beginPath()
-      ctx.moveTo(b.r * 0.45, -b.r * 0.55)
-      ctx.bezierCurveTo(
-        b.r * 0.3, -b.r * 0.72,
-        b.r * 0.02, -b.r * 0.55,
-        b.r * 0.45, -b.r * 0.3
-      )
-      ctx.bezierCurveTo(
-        b.r * 0.88, -b.r * 0.55,
-        b.r * 0.6, -b.r * 0.72,
-        b.r * 0.45, -b.r * 0.55
-      )
-      ctx.fill()
 
       ctx.restore()
       ctx.globalAlpha = 1
@@ -742,38 +773,40 @@ Page({
         ctx.scale(grow, grow)
       }
 
-      // 食盆（米白半圆碗 + 棕描边，参考素材配色）
-      ctx.fillStyle = '#fff3e0'
-      ctx.strokeStyle = '#8a5a2b'
-      ctx.lineWidth = 1.6
-      ctx.beginPath()
-      ctx.ellipse(0, r * 0.1, r * 0.95, r * 0.62, 0, 0, Math.PI)
-      ctx.fill()
-      ctx.stroke()
-      // 盆沿
-      ctx.strokeStyle = '#8a5a2b'
-      ctx.lineWidth = 2
-      ctx.beginPath()
-      ctx.ellipse(0, r * 0.08, r * 0.95, r * 0.26, 0, 0, Math.PI * 2)
-      ctx.stroke()
-      // 蓝色爪印
-      ctx.fillStyle = '#5c8fc9'
-      ctx.beginPath()
-      ctx.ellipse(-r * 0.25, r * 0.32, r * 0.08, r * 0.11, 0, 0, Math.PI * 2)
-      ctx.ellipse(r * 0.25, r * 0.32, r * 0.08, r * 0.11, 0, 0, Math.PI * 2)
-      ctx.fill()
-
-      // 盆内狗粮颗粒（橙黄方形）
-      ctx.fillStyle = '#ffb74d'
-      for (const [gx, gy, gr] of [[-0.45, -0.05, 0.16], [0.1, -0.18, 0.18], [0.42, -0.02, 0.15], [-0.1, 0.18, 0.14], [0.3, 0.18, 0.13]]) {
-        rr(ctx, gx * r - gr * r, gy * r - gr * r, gr * r * 2, gr * r * 2, gr * r * 0.4)
+      // 狗粮：真实素材精灵（狗粮.png：米白食盆+蓝爪印+橙黄颗粒+黄星）
+      if (this.foodLoaded && this.foodImg) {
+        const fw = f.r * 2.9
+        const fh = (fw * this.foodImg.height) / this.foodImg.width
+        ctx.drawImage(this.foodImg, -fw / 2, -fh / 2, fw, fh)
+      } else {
+        // 兜底：程序化绘制（素材加载失败时保证画面不空）
+        ctx.fillStyle = '#fff3e0'
+        ctx.strokeStyle = '#8a5a2b'
+        ctx.lineWidth = 1.6
+        ctx.beginPath()
+        ctx.ellipse(0, r * 0.1, r * 0.95, r * 0.62, 0, 0, Math.PI)
         ctx.fill()
-      }
-      // 颗粒高光
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'
-      for (const [gx, gy, gr] of [[-0.45, -0.05, 0.16], [0.1, -0.18, 0.18]]) {
-        rr(ctx, gx * r - gr * r * 0.5, gy * r - gr * r * 0.6, gr * r * 0.8, gr * r * 0.5, gr * r * 0.3)
+        ctx.stroke()
+        ctx.strokeStyle = '#8a5a2b'
+        ctx.lineWidth = 2
+        ctx.beginPath()
+        ctx.ellipse(0, r * 0.08, r * 0.95, r * 0.26, 0, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.fillStyle = '#5c8fc9'
+        ctx.beginPath()
+        ctx.ellipse(-r * 0.25, r * 0.32, r * 0.08, r * 0.11, 0, 0, Math.PI * 2)
+        ctx.ellipse(r * 0.25, r * 0.32, r * 0.08, r * 0.11, 0, 0, Math.PI * 2)
         ctx.fill()
+        ctx.fillStyle = '#ffb74d'
+        for (const [gx, gy, gr] of [[-0.45, -0.05, 0.16], [0.1, -0.18, 0.18], [0.42, -0.02, 0.15], [-0.1, 0.18, 0.14], [0.3, 0.18, 0.13]]) {
+          rr(ctx, gx * r - gr * r, gy * r - gr * r, gr * r * 2, gr * r * 2, gr * r * 0.4)
+          ctx.fill()
+        }
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'
+        for (const [gx, gy, gr] of [[-0.45, -0.05, 0.16], [0.1, -0.18, 0.18]]) {
+          rr(ctx, gx * r - gr * r * 0.5, gy * r - gr * r * 0.6, gr * r * 0.8, gr * r * 0.5, gr * r * 0.3)
+          ctx.fill()
+        }
       }
 
       // 光环（未命中时微微浮动）
@@ -791,163 +824,79 @@ Page({
     }
   },
 
-  /** 便便狗：白色斑点狗（参考设定素材：白身黑斑、吐舌、粉腮红） */
+  /** 便便狗：直接使用设定素材图（白身黑斑斑点狗，黑线简笔画风），微浮动 + 朝向移动方向 */
   drawDog(ctx) {
     const r = DOG_R
     const x = this.rabbit.x
     const y = this.rabbit.y - this.camera
-    const tilt = clamp(this.rabbit.vx * 0.02, -0.42, 0.42)
     const t = this.elapsed
 
+    if (this.dogLoaded && this.dogImg) {
+      const dogH = r * 3.2
+      const dogW = (dogH * this.dogImg.width) / this.dogImg.height
+      const tilt = clamp(this.rabbit.vx * 0.02, -0.35, 0.35)
+      const bob = Math.sin(t * 4) * 2
+      const facing = this.rabbit.vx >= 0 ? 1 : -1
+
+      ctx.save()
+      ctx.translate(x, y + bob)
+      ctx.rotate(tilt)
+      ctx.scale(facing, 1)
+
+      // 脚下柔和阴影
+      ctx.fillStyle = 'rgba(0,0,0,0.12)'
+      ctx.beginPath()
+      ctx.ellipse(0, dogH * 0.42, dogW * 0.3, dogH * 0.06, 0, 0, Math.PI * 2)
+      ctx.fill()
+
+      // 小狗本体（设定素材精灵）
+      ctx.drawImage(this.dogImg, -dogW / 2, -dogH * 0.42, dogW, dogH)
+
+      // 嘴里叼着的骨头（踩中骨头后出现，用真实骨头精灵）
+      if (this.carryBone) {
+        const cr = this.carryBone.r * 1.15
+        const cbw = cr * 2.2
+        ctx.save()
+        ctx.translate(dogW * 0.18, -dogH * 0.12)
+        ctx.rotate(0.3)
+        if (this.boneLoaded && this.boneImg) {
+          const cbh = (cbw * this.boneImg.height) / this.boneImg.width
+          ctx.drawImage(this.boneImg, -cbw / 2, -cbh / 2, cbw, cbh)
+        } else {
+          ctx.fillStyle = '#ffd54f'
+          ctx.beginPath()
+          ctx.arc(-cr * 0.55, 0, cr * 0.45, 0, Math.PI * 2)
+          ctx.arc(cr * 0.55, 0, cr * 0.45, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.restore()
+      }
+      ctx.restore()
+      return
+    }
+
+    // 兜底：程序化简版小狗（素材加载失败时保证画面不空）
+    const tilt = clamp(this.rabbit.vx * 0.02, -0.35, 0.35)
     ctx.save()
     ctx.translate(x, y)
     ctx.rotate(tilt)
-
-    // 脚下柔和阴影
-    ctx.fillStyle = 'rgba(0,0,0,0.12)'
-    ctx.beginPath()
-    ctx.ellipse(0, r * 1.12, r * 0.85, r * 0.2, 0, 0, Math.PI * 2)
-    ctx.fill()
-
-    // 尾巴（上翘短尾，轻微摆动）
-    const tailWag = Math.sin(t * 8) * 0.25
-    ctx.save()
-    ctx.translate(r * 0.78, r * 0.45)
-    ctx.rotate(-0.7 + tailWag)
     ctx.fillStyle = '#f7f2ea'
-    ctx.strokeStyle = 'rgba(138,90,43,0.35)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.ellipse(0, -r * 0.28, r * 0.14, r * 0.3, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.stroke()
-    ctx.restore()
-
-    // 垂耳（棕色，两侧垂下，微微扇动）
-    const earSwing = Math.sin(t * 5) * 0.08
-    this.drawDogEar(ctx, -r * 0.55, -r * 0.35, -0.55 + earSwing, r)
-    this.drawDogEar(ctx, r * 0.55, -r * 0.35, 0.55 - earSwing, r)
-
-    // 小短手（米白）
-    ctx.fillStyle = '#fdf3ea'
-    ctx.beginPath()
-    ctx.ellipse(-r * 0.95, r * 0.22, r * 0.22, r * 0.3, 0.5, 0, Math.PI * 2)
-    ctx.ellipse(r * 0.95, r * 0.22, r * 0.22, r * 0.3, -0.5, 0, Math.PI * 2)
-    ctx.fill()
-
-    // 身体（白色斑点狗：白底圆身）
-    const bodyGrad = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.2, 0, 0, r * 1.1)
-    bodyGrad.addColorStop(0, '#ffffff')
-    bodyGrad.addColorStop(0.7, '#fbf6ee')
-    bodyGrad.addColorStop(1, '#f0e6d8')
-    ctx.fillStyle = bodyGrad
     ctx.beginPath()
     ctx.ellipse(0, 0, r, r * 1.08, 0, 0, Math.PI * 2)
     ctx.fill()
-    ctx.strokeStyle = 'rgba(180,140,95,0.3)'
-    ctx.lineWidth = 1
-    ctx.stroke()
-
-    // 黑色斑点（便便狗特征）
     ctx.fillStyle = '#3b3b3b'
     ctx.beginPath()
-    ctx.ellipse(-r * 0.5, r * 0.18, r * 0.2, r * 0.15, 0.3, 0, Math.PI * 2)
-    ctx.ellipse(r * 0.42, r * 0.5, r * 0.17, r * 0.13, -0.3, 0, Math.PI * 2)
-    ctx.ellipse(r * 0.08, -r * 0.62, r * 0.14, r * 0.1, 0.2, 0, Math.PI * 2)
-    ctx.ellipse(-r * 0.6, r * 0.62, r * 0.12, r * 0.09, -0.2, 0, Math.PI * 2)
+    ctx.arc(-r * 0.5, r * 0.18, r * 0.2, 0, Math.PI * 2)
+    ctx.arc(r * 0.42, r * 0.5, r * 0.17, 0, Math.PI * 2)
     ctx.fill()
-
-    // 肚子（浅色）
-    ctx.fillStyle = 'rgba(255,255,255,0.6)'
-    ctx.beginPath()
-    ctx.ellipse(0, r * 0.38, r * 0.5, r * 0.42, 0, 0, Math.PI * 2)
-    ctx.fill()
-
-    // 腮红（粉）
-    ctx.fillStyle = 'rgba(255,150,140,0.5)'
-    ctx.beginPath()
-    ctx.ellipse(-r * 0.58, r * 0.16, r * 0.24, r * 0.15, 0, 0, Math.PI * 2)
-    ctx.ellipse(r * 0.58, r * 0.16, r * 0.24, r * 0.15, 0, 0, Math.PI * 2)
-    ctx.fill()
-
-    // 眼睛（大而 Q，黑色，双高光）
     ctx.fillStyle = '#2b2b2b'
     ctx.beginPath()
     ctx.arc(-r * 0.32, -r * 0.18, r * 0.18, 0, Math.PI * 2)
     ctx.arc(r * 0.32, -r * 0.18, r * 0.18, 0, Math.PI * 2)
     ctx.fill()
-    ctx.fillStyle = '#ffffff'
-    ctx.beginPath()
-    ctx.arc(-r * 0.27, -r * 0.24, r * 0.065, 0, Math.PI * 2)
-    ctx.arc(r * 0.37, -r * 0.24, r * 0.065, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'
-    ctx.beginPath()
-    ctx.arc(-r * 0.38, -r * 0.11, r * 0.03, 0, Math.PI * 2)
-    ctx.arc(r * 0.26, -r * 0.11, r * 0.03, 0, Math.PI * 2)
-    ctx.fill()
-
-    // 鼻子（黑色圆鼻头）
-    ctx.fillStyle = '#2b2b2b'
-    ctx.beginPath()
-    ctx.ellipse(0, r * 0.02, r * 0.12, r * 0.09, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = 'rgba(255,255,255,0.4)'
-    ctx.beginPath()
-    ctx.arc(-r * 0.03, -r * 0.02, r * 0.03, 0, Math.PI * 2)
-    ctx.fill()
-
-    // 吐舌头（粉红，下垂微晃）
-    const tongueLen = r * 0.42 + Math.sin(t * 6) * r * 0.06
     ctx.fillStyle = '#ff8a80'
     ctx.beginPath()
-    ctx.ellipse(r * 0.18, r * 0.1 + tongueLen * 0.5, r * 0.13, tongueLen * 0.5, 0.35, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(224,80,80,0.5)'
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(r * 0.12, r * 0.08)
-    ctx.lineTo(r * 0.26, r * 0.1 + tongueLen * 0.75)
-    ctx.stroke()
-
-    // 嘴里叼着的骨头（踩中骨头后出现）
-    if (this.carryBone) {
-      const cr = this.carryBone.r
-      ctx.save()
-      ctx.translate(r * 0.68, r * 0.02)
-      ctx.rotate(0.35)
-      ctx.fillStyle = '#ffd54f'
-      ctx.strokeStyle = '#8a5a2b'
-      ctx.lineWidth = 1.2
-      ctx.beginPath()
-      ctx.arc(-cr * 0.55, 0, cr * 0.45, 0, Math.PI * 2)
-      ctx.arc(cr * 0.55, 0, cr * 0.45, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.stroke()
-      ctx.fillStyle = '#ffcf6e'
-      rr(ctx, -cr * 0.55, -cr * 0.3, cr * 1.1, cr * 0.6, cr * 0.2)
-      ctx.fill()
-      ctx.stroke()
-      ctx.restore()
-    }
-
-    ctx.restore()
-  },
-
-  drawDogEar(ctx, x, y, angle, r) {
-    ctx.save()
-    ctx.translate(x, y)
-    ctx.rotate(angle)
-    const earGrad = ctx.createLinearGradient(0, -r * 0.4, 0, r * 0.45)
-    earGrad.addColorStop(0, '#a0714a')
-    earGrad.addColorStop(1, '#7c5230')
-    ctx.fillStyle = earGrad
-    ctx.beginPath()
-    ctx.ellipse(0, 0, r * 0.24, r * 0.45, 0, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.fillStyle = 'rgba(255,255,255,0.18)'
-    ctx.beginPath()
-    ctx.ellipse(-r * 0.06, -r * 0.08, r * 0.08, r * 0.22, 0.2, 0, Math.PI * 2)
+    ctx.ellipse(r * 0.18, r * 0.35, r * 0.13, r * 0.2, 0.3, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   },
