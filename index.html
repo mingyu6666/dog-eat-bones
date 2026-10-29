@@ -47,6 +47,19 @@
   .final-score { color: #ffd54f; font-size: 40px; font-weight: 800; margin-bottom: 14px; text-shadow: 0 3px 10px rgba(0,0,0,0.4); }
   .final-score.height { color: #fff; font-size: 28px; }
   .best-tip { color: rgba(255,255,255,0.85); font-size: 14px; margin-top: 16px; text-shadow: 0 1px 4px rgba(0,0,0,0.35); }
+
+  .breed-menu { display: flex; gap: 8px; margin: 18px 0 4px; flex-wrap: wrap; justify-content: center; padding: 0 10px; }
+  .breed-item-wrap { display: flex; flex-direction: column; align-items: center; }
+  .breed-item {
+    width: 50px; height: 50px; border-radius: 50%;
+    background: #fff; border: 3px solid rgba(255,255,255,0.5);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden; transition: transform 0.15s, border-color 0.15s;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.18);
+  }
+  .breed-item.active { border-color: #ffb300; transform: scale(1.15); }
+  .breed-item img { width: 42px; height: 42px; object-fit: contain; pointer-events: none; }
+  .breed-name { font-size: 11px; color: #fff; margin-top: 3px; text-shadow: 0 1px 3px rgba(0,0,0,0.4); }
 </style>
 </head>
 <body>
@@ -65,6 +78,7 @@
     <div class="title">小狗吃骨头</div>
     <div class="subtitle">移动小狗瞄准骨头，踩中叼进嘴里继续弹</div>
     <div class="subtitle">碰到狗粮会蹦得特别高！踩空就会摔落</div>
+    <div class="breed-menu" id="breedMenu"></div>
     <div class="btn">点击开始</div>
     <div class="best-tip" id="bestTip"></div>
   </div>
@@ -636,15 +650,17 @@
       const y = this.rabbit.y - this.camera
       const t = this.elapsed
 
-      if (this.dogLoaded && this.dogImg) {
+      const bi = this.breedData[this.selectedBreed]
+      if (bi && bi.standLoaded && bi.stand) {
         // 跳跃动画：上升阶段（vy<0）切换为"两腿往前蹬"的腾空帧，下落/待机用站立帧
-        const useJump = this.rabbit.vy < 0 && this.dog2Loaded && this.dog2Img
-        const dogImg = useJump ? this.dog2Img : this.dogImg
+        const useJump = this.rabbit.vy < 0 && bi.jumpLoaded && bi.jump
+        const dogImg = useJump ? bi.jump : bi.stand
         const dogH = r * 3.2
         const dogW = (dogH * dogImg.width) / dogImg.height
         const tilt = clamp(this.rabbit.vx * 0.02, -0.35, 0.35)
         const bob = Math.sin(t * 4) * 2
         // 便便狗原图头朝左：向右移动时镜像成朝右，向左移动保持原图方向
+        // （正脸品种镜像后视觉不变，无副作用）
         const facing = this.rabbit.vx >= 0 ? -1 : 1
 
         ctx.save()
@@ -663,8 +679,9 @@
           const cr = this.carryBone.r * 1.15
           const cbw = cr * 2.2
           ctx.save()
-          // 骨头叼在嘴里：狗嘴在精灵左下部（黑鼻粉舌处），随朝向镜像自动翻转
-          ctx.translate(-dogW * 0.24, dogH * 0.34)
+          // 骨头叼在嘴里：便便狗嘴在左下，正脸狗嘴在正下方中央
+          const boneX = this.selectedBreed === 'poo' ? -dogW * 0.24 : 0
+          ctx.translate(boneX, dogH * 0.34)
           ctx.rotate(-0.12)
           if (this.boneLoaded && this.boneImg) {
             const cbh = (cbw * this.boneImg.height) / this.boneImg.width
@@ -847,17 +864,61 @@
   game.foodImg = new Image()
   game.foodImg.onload = () => { game.foodLoaded = true }
   game.foodImg.src = 'assets/images/food.png'
-  game.dogLoaded = false
-  game.dogImg = new Image()
-  game.dogImg.onload = () => { game.dogLoaded = true }
-  game.dogImg.src = 'assets/images/dog.png'
-  game.dog2Loaded = false
-  game.dog2Img = new Image()
-  game.dog2Img.onload = () => { game.dog2Loaded = true }
-  game.dog2Img.src = 'assets/images/dog2.png'
+
+  /* ---------- 多品种小狗：站立帧 + 蹬腿帧 ---------- */
+  const BREEDS = [
+    { id: 'poo',     name: '便便',   stand: 'assets/images/dog.png',            jump: 'assets/images/dog2.png' },
+    { id: 'pug',     name: '巴哥',   stand: 'assets/images/dog_pug.png',         jump: 'assets/images/dog_pug_jump.png' },
+    { id: 'shiba',   name: '柴犬',   stand: 'assets/images/dog_shiba.png',      jump: 'assets/images/dog_shiba_jump.png' },
+    { id: 'poodle',   name: '泰迪',   stand: 'assets/images/dog_poodle.png',     jump: 'assets/images/dog_poodle_jump.png' },
+    { id: 'husky',   name: '哈士奇', stand: 'assets/images/dog_husky.png',       jump: 'assets/images/dog_husky_jump.png' },
+    { id: 'corgi',   name: '柯基',   stand: 'assets/images/dog_corgi.png',       jump: 'assets/images/dog_corgi_jump.png' },
+  ]
+  game.breedData = {}
+  for (const b of BREEDS) {
+    const stand = new Image()
+    stand.onload = () => { game.breedData[b.id].standLoaded = true }
+    stand.src = b.stand
+    const jump = new Image()
+    jump.onload = () => { game.breedData[b.id].jumpLoaded = true }
+    jump.src = b.jump
+    game.breedData[b.id] = { stand, jump, standLoaded: false, jumpLoaded: false, name: b.name }
+  }
+  game.selectedBreed = 'poo'
+  try {
+    const saved = localStorage.getItem('dog_bone_breed')
+    if (saved && game.breedData[saved]) game.selectedBreed = saved
+  } catch (e) {}
+
+  function buildBreedMenu() {
+    const menu = document.getElementById('breedMenu')
+    menu.innerHTML = ''
+    for (const b of BREEDS) {
+      const wrap = document.createElement('div')
+      wrap.className = 'breed-item-wrap'
+      const item = document.createElement('div')
+      item.className = 'breed-item' + (b.id === game.selectedBreed ? ' active' : '')
+      const img = document.createElement('img')
+      img.src = b.stand
+      item.appendChild(img)
+      item.addEventListener('click', (e) => {
+        e.stopPropagation()
+        game.selectedBreed = b.id
+        try { localStorage.setItem('dog_bone_breed', b.id) } catch (e) {}
+        buildBreedMenu()
+      })
+      const name = document.createElement('div')
+      name.className = 'breed-name'
+      name.textContent = b.name
+      wrap.appendChild(item)
+      wrap.appendChild(name)
+      menu.appendChild(wrap)
+    }
+  }
 
   /* ---------- 启动 ---------- */
   game.loadBest()
+  buildBreedMenu()
   window.addEventListener('resize', resize)
   resize()
   game.initGame()
